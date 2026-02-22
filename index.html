@@ -1,0 +1,2085 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DMA Memory Visualizer</title>
+<style>
+:root {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1a2332;
+  --bg-card: #1e293b;
+  --border: #2d3748;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-dim: #64748b;
+  --accent: #00d4ff;
+  --accent-dim: #0891b2;
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #eab308;
+  --orange: #f97316;
+  --purple: #a855f7;
+  --hex-zero: #4a5568;
+  --hex-ascii: #60a5fa;
+  --hex-high: #f472b6;
+  --changed: #ef4444;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Header */
+.header {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo {
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+
+.status-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--red);
+  display: inline-block;
+  animation: pulse 2s infinite;
+}
+
+.status-dot.connected { background: var(--green); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.header-info {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  gap: 16px;
+}
+
+.header-info span { white-space: nowrap; }
+
+.btn-connect {
+  padding: 4px 12px;
+  background: var(--accent-dim);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+.btn-connect:hover { background: var(--accent); }
+
+/* Tabs */
+.tabs {
+  display: flex;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+}
+
+.tab {
+  padding: 10px 20px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  font-size: 13px;
+  font-family: inherit;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.tab:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Tab Content */
+.tab-content { display: none; padding: 16px; }
+.tab-content.active { display: block; }
+
+/* Controls */
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.controls label {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+input[type="text"], input[type="number"], select {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  border-radius: 4px;
+  outline: none;
+}
+
+input:focus, select:focus {
+  border-color: var(--accent);
+}
+
+.addr-input { width: 200px; }
+
+button {
+  padding: 6px 14px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+button:hover { border-color: var(--accent); color: var(--accent); }
+
+button.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: white;
+}
+button.primary:hover { background: var(--accent); }
+
+button.danger {
+  border-color: var(--red);
+  color: var(--red);
+}
+button.danger:hover { background: var(--red); color: white; }
+
+/* Memory Map */
+.memmap-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.memmap-bar-wrapper {
+  width: 100%;
+  height: 40px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  cursor: pointer;
+  position: relative;
+}
+
+.memmap-bar-segment {
+  height: 100%;
+  transition: opacity 0.2s;
+  position: relative;
+}
+.memmap-bar-segment:hover { opacity: 0.8; }
+
+.memmap-regions {
+  margin-top: 8px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.memmap-region {
+  display: grid;
+  grid-template-columns: 200px 200px 150px 1fr;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.memmap-region:hover { background: var(--bg-tertiary); }
+
+.memmap-region .base { color: var(--accent); }
+.memmap-region .end { color: var(--text-secondary); }
+.memmap-region .size { color: var(--green); }
+
+.memmap-stats {
+  display: flex;
+  gap: 24px;
+  padding: 12px;
+  background: var(--bg-card);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+}
+.stat-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; }
+.stat-value { font-size: 18px; color: var(--accent); margin-top: 2px; }
+
+/* Hex Viewer */
+.hex-view {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.hex-header {
+  display: grid;
+  grid-template-columns: 150px 1fr 200px;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.hex-line {
+  display: grid;
+  grid-template-columns: 150px 1fr 200px;
+  padding: 2px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  border-bottom: 1px solid rgba(45, 55, 72, 0.3);
+  transition: background 0.1s;
+}
+
+.hex-line:hover { background: var(--bg-tertiary); }
+.hex-line .addr { color: var(--accent); user-select: all; }
+.hex-line .hex { color: var(--text-primary); letter-spacing: 0.5px; }
+.hex-line .ascii { color: var(--hex-ascii); user-select: all; }
+
+.hex-byte-00 { color: var(--hex-zero) !important; }
+.hex-byte-ascii { color: var(--text-primary) !important; }
+.hex-byte-high { color: var(--hex-high) !important; }
+
+.hex-content {
+  max-height: calc(100vh - 280px);
+  overflow-y: auto;
+}
+
+.hex-nav {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+}
+
+.elapsed { font-size: 11px; color: var(--text-dim); }
+
+/* Process List */
+.proc-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.proc-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-tertiary);
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+
+.proc-table td {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(45, 55, 72, 0.3);
+}
+
+.proc-table tr { cursor: pointer; transition: background 0.15s; }
+.proc-table tr:hover { background: var(--bg-tertiary); }
+.proc-table tr.selected { background: rgba(0, 212, 255, 0.1); }
+
+.proc-table .pid { color: var(--yellow); }
+.proc-table .name { color: var(--green); }
+.proc-table .dtb { color: var(--accent); font-size: 12px; }
+
+.proc-container {
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.proc-filter {
+  margin-bottom: 12px;
+}
+
+.proc-filter input {
+  width: 300px;
+}
+
+/* Search */
+.search-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-card);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  align-items: flex-end;
+}
+
+.search-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.search-form .field label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.search-results {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.search-result {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--accent);
+  transition: background 0.15s;
+}
+.search-result:hover { background: var(--bg-tertiary); }
+
+/* Live Monitor */
+.watch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.watch-entry {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.watch-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+
+.watch-header .label {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.watch-body {
+  padding: 8px;
+  font-size: 13px;
+}
+
+.watch-body .hex-line {
+  padding: 1px 8px;
+}
+
+.byte-changed {
+  color: var(--changed) !important;
+  font-weight: bold;
+  animation: flash 0.5s;
+}
+
+@keyframes flash {
+  0% { background: rgba(239, 68, 68, 0.3); }
+  100% { background: transparent; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* Loading */
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  padding: 20px;
+}
+
+.spinner {
+  width: 16px; height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-dim);
+}
+
+/* Write Panel */
+.write-panel {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.write-panel .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.write-panel .field label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.write-panel input.write-hex {
+  width: 400px;
+  font-family: inherit;
+}
+
+button.write-btn {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: #000;
+  font-weight: bold;
+}
+button.write-btn:hover { background: #fb923c; }
+
+/* Scanner (CE-style) */
+.scanner-controls {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.scanner-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.scanner-row:last-child { margin-bottom: 0; }
+
+.scanner-row .field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.scanner-row .field label {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.scan-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+  align-self: center;
+  min-width: 100px;
+}
+.scan-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  width: 0%;
+  transition: width 0.2s;
+}
+
+.scanner-results {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.scanner-results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.scan-results-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.scan-results-table th {
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.scan-results-table td {
+  padding: 4px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(45,55,72,0.3);
+}
+.scan-results-table tr:hover { background: var(--bg-tertiary); }
+.scan-results-table .addr { color: var(--accent); cursor: pointer; }
+.scan-results-table .val { color: var(--green); }
+.scan-results-table .prev { color: var(--text-dim); }
+
+.scan-results-body {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.scan-results-nav {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+
+/* Address Table (CE bottom pane) */
+.address-table-pane {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.address-table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--orange);
+  font-weight: bold;
+}
+
+.address-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.address-table th {
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.address-table td {
+  padding: 4px 10px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(45,55,72,0.3);
+}
+.address-table tr:hover { background: var(--bg-tertiary); }
+.address-table .at-label {
+  color: var(--text-primary);
+  cursor: pointer;
+  min-width: 80px;
+}
+.address-table .at-addr { color: var(--accent); cursor: pointer; }
+.address-table .at-val {
+  color: var(--green);
+  cursor: pointer;
+  font-weight: bold;
+}
+.address-table .at-locked { color: var(--red); }
+
+.at-inline-edit {
+  background: var(--bg-primary);
+  border: 1px solid var(--accent);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 1px 4px;
+  width: 100px;
+  outline: none;
+}
+
+/* Toast */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast {
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  animation: slideIn 0.3s;
+  max-width: 400px;
+}
+.toast.error { border-color: var(--red); color: var(--red); }
+.toast.success { border-color: var(--green); color: var(--green); }
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <span class="logo">DMA MEMORY VISUALIZER</span>
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText" style="font-size:12px;color:var(--text-secondary)">Disconnected</span>
+    <button class="btn-connect" id="btnConnect" onclick="connectDevice()">Connect</button>
+  </div>
+  <div class="header-info" id="headerInfo"></div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('memmap')">Memory Map</div>
+  <div class="tab" onclick="switchTab('hexview')">Hex Viewer</div>
+  <div class="tab" onclick="switchTab('processes')">Processes</div>
+  <div class="tab" onclick="switchTab('search')">Scanner</div>
+  <div class="tab" onclick="switchTab('monitor')">Live Monitor</div>
+</div>
+
+<!-- Tab 1: Memory Map -->
+<div class="tab-content active" id="tab-memmap">
+  <div class="memmap-stats" id="memmapStats"></div>
+  <div class="memmap-bar-wrapper" id="memmapBar"></div>
+  <div style="margin-top:8px;font-size:11px;color:var(--text-dim)">
+    Click a region to jump to Hex Viewer at that address
+  </div>
+  <div class="memmap-regions" id="memmapRegions">
+    <div class="memmap-region" style="font-weight:bold;color:var(--text-dim)">
+      <span>Base Address</span>
+      <span>End Address</span>
+      <span>Size</span>
+      <span>Description</span>
+    </div>
+  </div>
+</div>
+
+<!-- Tab 2: Hex Viewer -->
+<div class="tab-content" id="tab-hexview">
+  <div class="controls">
+    <label>Address:</label>
+    <input type="text" class="addr-input" id="hexAddr" value="0x1000" placeholder="0x1000">
+    <label>Size:</label>
+    <select id="hexSize">
+      <option value="64">64 B</option>
+      <option value="256" selected>256 B</option>
+      <option value="1024">1 KB</option>
+      <option value="4096">4 KB</option>
+      <option value="16384">16 KB</option>
+      <option value="65536">64 KB</option>
+    </select>
+    <label>Mode:</label>
+    <select id="hexMode">
+      <option value="physical">Physical</option>
+      <option value="virtual">Virtual</option>
+    </select>
+    <label id="hexPidLabel" style="display:none">PID:</label>
+    <input type="number" id="hexPid" style="display:none;width:80px" value="4">
+    <button class="primary" onclick="readMemory()">Read</button>
+    <button onclick="copyHex()">Copy Hex</button>
+    <button onclick="copyAscii()">Copy ASCII</button>
+    <label style="margin-left:12px">
+      <input type="checkbox" id="hexAutoRefresh" onchange="toggleAutoRefresh()">
+      Auto-refresh
+    </label>
+    <span class="elapsed" id="hexElapsed"></span>
+  </div>
+  <div class="write-panel">
+    <div class="field">
+      <label>Write Address</label>
+      <input type="text" id="writeAddr" value="0x1000" style="width:180px" placeholder="0x1000">
+    </div>
+    <div class="field">
+      <label>Write Mode</label>
+      <select id="writeMode" onchange="toggleWritePid()">
+        <option value="physical">Physical</option>
+        <option value="virtual">Virtual</option>
+      </select>
+    </div>
+    <div class="field" id="writePidField" style="display:none">
+      <label>PID</label>
+      <input type="number" id="writePid" value="4" style="width:80px">
+    </div>
+    <div class="field">
+      <label>Hex Data (e.g. 90 90 90 00)</label>
+      <input type="text" class="write-hex" id="writeHex" placeholder="4D 5A 90 00">
+    </div>
+    <button class="write-btn" onclick="writeMemory()">Write</button>
+  </div>
+  <div class="hex-view">
+    <div class="hex-header">
+      <span>Address</span>
+      <span>00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F</span>
+      <span>ASCII</span>
+    </div>
+    <div class="hex-content" id="hexContent">
+      <div class="empty-state">Enter an address and click Read</div>
+    </div>
+    <div class="hex-nav">
+      <button onclick="hexNavigate(-1)">&#9664; Prev</button>
+      <button onclick="hexNavigate(1)">Next &#9654;</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tab 3: Processes -->
+<div class="tab-content" id="tab-processes">
+  <div class="controls">
+    <div class="proc-filter">
+      <input type="text" id="procFilter" placeholder="Filter processes..." oninput="filterProcesses()">
+    </div>
+    <button class="primary" onclick="loadProcesses()">Refresh</button>
+    <button onclick="readProcessMemory()">Read Selected Memory</button>
+    <span id="procCount" style="font-size:12px;color:var(--text-dim)"></span>
+  </div>
+  <div class="proc-container">
+    <table class="proc-table">
+      <thead>
+        <tr>
+          <th>PID</th>
+          <th>Name</th>
+          <th>PPID</th>
+          <th>State</th>
+          <th>DTB</th>
+          <th>WoW64</th>
+          <th>Session</th>
+        </tr>
+      </thead>
+      <tbody id="procBody">
+        <tr><td colspan="7" class="empty-state">Click Refresh to load processes</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Tab 4: Memory Scanner (CE-style) -->
+<div class="tab-content" id="tab-search">
+  <!-- Scanner Controls -->
+  <div class="scanner-controls">
+    <div class="scanner-row">
+      <div class="field">
+        <label>Process</label>
+        <select id="scanProcess" style="width:180px">
+          <option value="0">-- Physical --</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Value Type</label>
+        <select id="scanDataType" style="width:140px">
+          <option value="int8">Int8 (1B)</option>
+          <option value="uint8">UInt8 (1B)</option>
+          <option value="int16">Int16 (2B)</option>
+          <option value="uint16">UInt16 (2B)</option>
+          <option value="int32" selected>Int32 (4B)</option>
+          <option value="uint32">UInt32 (4B)</option>
+          <option value="int64">Int64 (8B)</option>
+          <option value="uint64">UInt64 (8B)</option>
+          <option value="float">Float (4B)</option>
+          <option value="double">Double (8B)</option>
+          <option value="hex">Hex Bytes</option>
+          <option value="ascii">ASCII String</option>
+          <option value="utf16">UTF-16 String</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Condition</label>
+        <select id="scanCondition" style="width:150px" onchange="updateScanConditionUI()">
+          <option value="exact">Exact Value</option>
+          <option value="not_equal">Not Equal</option>
+          <option value="greater_than">Greater Than</option>
+          <option value="less_than">Less Than</option>
+          <option value="between">Between</option>
+          <option value="unknown">Unknown Initial Value</option>
+          <option value="changed" class="next-only" disabled>Changed</option>
+          <option value="unchanged" class="next-only" disabled>Unchanged</option>
+          <option value="increased" class="next-only" disabled>Increased</option>
+          <option value="decreased" class="next-only" disabled>Decreased</option>
+          <option value="increased_by" class="next-only" disabled>Increased By...</option>
+          <option value="decreased_by" class="next-only" disabled>Decreased By...</option>
+        </select>
+      </div>
+      <div class="field" id="scanValueField">
+        <label>Value</label>
+        <input type="text" id="scanValue" placeholder="100" style="width:120px">
+      </div>
+      <div class="field" id="scanValue2Field" style="display:none">
+        <label>To</label>
+        <input type="text" id="scanValue2" placeholder="200" style="width:100px">
+      </div>
+      <button class="primary" id="btnFirstScan" onclick="doFirstScan()">First Scan</button>
+      <button class="primary" id="btnNextScan" onclick="doNextScan()" disabled>Next Scan</button>
+      <button class="danger" id="btnResetScan" onclick="doResetScan()">Reset</button>
+    </div>
+    <div class="scanner-row">
+      <div class="field">
+        <label>Start</label>
+        <input type="text" id="scanStart" value="0x10000" style="width:140px">
+      </div>
+      <div class="field">
+        <label>End</label>
+        <input type="text" id="scanEnd" value="0x7FFFFFFFFFFF" style="width:140px">
+      </div>
+      <span class="elapsed" id="scanStatus">Ready</span>
+      <div class="scan-progress-bar" id="scanProgressBar" style="display:none">
+        <div class="scan-progress-fill" id="scanProgressFill"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results Table -->
+  <div class="scanner-results">
+    <div class="scanner-results-header">
+      <span id="scanResultCount">No scan results</span>
+      <div class="scan-results-nav">
+        <button onclick="scanResultsNav(-1)">Prev</button>
+        <span id="scanResultPage">-</span>
+        <button onclick="scanResultsNav(1)">Next</button>
+      </div>
+    </div>
+    <div class="scan-results-body">
+      <table class="scan-results-table">
+        <thead>
+          <tr><th>Address</th><th>Value</th><th>Previous</th><th>Type</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="scanResultsBody">
+          <tr><td colspan="5" class="empty-state">Perform a scan to see results</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Address Table (CE bottom pane) -->
+  <div class="address-table-pane">
+    <div class="address-table-header">
+      <span>Address Table</span>
+      <button onclick="clearAddressTable()">Clear All</button>
+    </div>
+    <table class="address-table">
+      <thead>
+        <tr><th>Label</th><th>Address</th><th>Type</th><th>Value</th><th>Lock</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="addressTableBody">
+        <tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:12px">Add addresses from scan results above</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Tab 5: Live Monitor -->
+<div class="tab-content" id="tab-monitor">
+  <div class="controls">
+    <label>Address:</label>
+    <input type="text" class="addr-input" id="watchAddr" value="0x1000" placeholder="0x1000">
+    <label>Size:</label>
+    <select id="watchSize">
+      <option value="32">32 B</option>
+      <option value="64" selected>64 B</option>
+      <option value="128">128 B</option>
+      <option value="256">256 B</option>
+    </select>
+    <label>Interval (ms):</label>
+    <input type="number" id="watchInterval" value="500" style="width:80px" min="100" max="10000">
+    <label>Mode:</label>
+    <select id="watchMode">
+      <option value="-1">Physical</option>
+    </select>
+    <button class="primary" onclick="addWatch()">Add Watch</button>
+  </div>
+  <div class="watch-list" id="watchList">
+    <div class="empty-state">Add memory addresses to watch for changes in real-time</div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// =====================================================================
+// State
+// =====================================================================
+let ws = null;
+let connected = false;
+let currentHexData = null;
+let autoRefreshInterval = null;
+let selectedPid = null;
+let allProcesses = [];
+
+// =====================================================================
+// Persistent State (localStorage)
+// =====================================================================
+const STORAGE_KEY = 'dma_visualizer_state';
+
+function saveState() {
+  const state = {
+    // Current tab
+    activeTab: document.querySelector('.tab.active')?.textContent?.trim() || 'Memory Map',
+    // Hex Viewer
+    hexAddr: document.getElementById('hexAddr')?.value || '0x1000',
+    hexSize: document.getElementById('hexSize')?.value || '256',
+    hexMode: document.getElementById('hexMode')?.value || 'physical',
+    hexPid: document.getElementById('hexPid')?.value || '4',
+    // Write Panel
+    writeAddr: document.getElementById('writeAddr')?.value || '0x1000',
+    writeMode: document.getElementById('writeMode')?.value || 'physical',
+    writePid: document.getElementById('writePid')?.value || '4',
+    // Scanner
+    scanProcess: document.getElementById('scanProcess')?.value || '0',
+    scanDataType: document.getElementById('scanDataType')?.value || 'int32',
+    scanCondition: document.getElementById('scanCondition')?.value || 'exact',
+    scanValue: document.getElementById('scanValue')?.value || '',
+    scanValue2: document.getElementById('scanValue2')?.value || '',
+    scanStart: document.getElementById('scanStart')?.value || '0x10000',
+    scanEnd: document.getElementById('scanEnd')?.value || '0x7FFFFFFFFFFF',
+    // Scanner state (so we know to reload results)
+    scanNumber: scanState.scanNumber,
+    scanTotalResults: scanState.totalResults,
+    scanCurrentPage: scanState.currentPage,
+    // Live Monitor
+    watchAddr: document.getElementById('watchAddr')?.value || '0x1000',
+    watchSize: document.getElementById('watchSize')?.value || '64',
+    watchInterval: document.getElementById('watchInterval')?.value || '500',
+    // Process filter
+    procFilter: document.getElementById('procFilter')?.value || '',
+    selectedPid: selectedPid,
+    // Timestamp
+    savedAt: Date.now(),
+  };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {}
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function restoreState() {
+  const state = loadState();
+  if (!state) return;
+
+  // Hex Viewer
+  if (state.hexAddr) document.getElementById('hexAddr').value = state.hexAddr;
+  if (state.hexSize) document.getElementById('hexSize').value = state.hexSize;
+  if (state.hexMode) {
+    document.getElementById('hexMode').value = state.hexMode;
+    document.getElementById('hexMode').dispatchEvent(new Event('change'));
+  }
+  if (state.hexPid) document.getElementById('hexPid').value = state.hexPid;
+
+  // Write Panel
+  if (state.writeAddr) document.getElementById('writeAddr').value = state.writeAddr;
+  if (state.writeMode) {
+    document.getElementById('writeMode').value = state.writeMode;
+    toggleWritePid();
+  }
+  if (state.writePid) document.getElementById('writePid').value = state.writePid;
+
+  // Scanner values (process dropdown restored after processes load)
+  if (state.scanDataType) document.getElementById('scanDataType').value = state.scanDataType;
+  if (state.scanCondition) document.getElementById('scanCondition').value = state.scanCondition;
+  if (state.scanValue) document.getElementById('scanValue').value = state.scanValue;
+  if (state.scanValue2) document.getElementById('scanValue2').value = state.scanValue2;
+  if (state.scanStart) document.getElementById('scanStart').value = state.scanStart;
+  if (state.scanEnd) document.getElementById('scanEnd').value = state.scanEnd;
+  updateScanConditionUI();
+
+  // Live Monitor
+  if (state.watchAddr) document.getElementById('watchAddr').value = state.watchAddr;
+  if (state.watchSize) document.getElementById('watchSize').value = state.watchSize;
+  if (state.watchInterval) document.getElementById('watchInterval').value = state.watchInterval;
+
+  // Process filter & selection
+  if (state.procFilter) document.getElementById('procFilter').value = state.procFilter;
+  if (state.selectedPid) selectedPid = state.selectedPid;
+
+  // Restore scan state numbers (will trigger result reload after connection)
+  if (state.scanNumber > 0) {
+    scanState.scanNumber = state.scanNumber;
+    scanState.totalResults = state.scanTotalResults || 0;
+    scanState.currentPage = state.scanCurrentPage || 0;
+  }
+
+  return state;
+}
+
+// Auto-save state on any input change (debounced)
+let _saveDebounce = null;
+function debouncedSave() {
+  if (_saveDebounce) clearTimeout(_saveDebounce);
+  _saveDebounce = setTimeout(saveState, 300);
+}
+
+// Listen for changes on all inputs/selects
+document.addEventListener('input', debouncedSave);
+document.addEventListener('change', debouncedSave);
+
+// Also save before page unload
+window.addEventListener('beforeunload', saveState);
+
+// =====================================================================
+// Utility
+// =====================================================================
+function toast(msg, type = 'info') {
+  const c = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+async function api(url, opts = {}) {
+  try {
+    const r = await fetch(url, opts);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    return data;
+  } catch (e) {
+    toast(e.message, 'error');
+    throw e;
+  }
+}
+
+function formatSize(bytes) {
+  if (bytes >= 1024 * 1024 * 1024) return (bytes / (1024 ** 3)).toFixed(1) + ' GB';
+  if (bytes >= 1024 * 1024) return (bytes / (1024 ** 2)).toFixed(1) + ' MB';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return bytes + ' B';
+}
+
+// =====================================================================
+// Connection & Status
+// =====================================================================
+async function checkStatus() {
+  try {
+    const data = await api('/api/status');
+    updateStatus(data);
+  } catch { updateStatus({ connected: false }); }
+}
+
+let _hasRunOnConnected = false;
+
+function updateStatus(data) {
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  const info = document.getElementById('headerInfo');
+
+  const wasConnected = connected;
+  connected = data.connected;
+  if (data.connected) {
+    dot.className = 'status-dot connected';
+    text.textContent = data.os_identified ? 'Connected' : 'Connected (Raw Mode)';
+    const os = data.os_info || {};
+    const maxAddr = data.max_address_hex || (data.max_address ? '0x' + data.max_address.toString(16).toUpperCase() : '?');
+    let infoHtml = `<span>VMM: v${data.vmm_version || '?'}</span><span>Max Addr: ${maxAddr}</span>`;
+    if (os.win_build) infoHtml += `<span>Win Build: ${os.win_build}</span>`;
+    if (!data.os_identified) infoHtml += `<span style="color:var(--yellow)">${data.message || 'Raw mode'}</span>`;
+    info.innerHTML = infoHtml;
+    connectWebSocket();
+    // On first connection, restore full state
+    if (!_hasRunOnConnected) {
+      _hasRunOnConnected = true;
+      onConnected();
+    }
+  } else {
+    dot.className = 'status-dot';
+    text.textContent = 'Disconnected';
+    info.innerHTML = '<span style="color:var(--red)">DMA device not connected</span>';
+  }
+}
+
+async function connectDevice() {
+  try {
+    const data = await api('/api/connect', { method: 'POST' });
+    updateStatus(data);
+    toast('Device connected!', 'success');
+    loadMemoryMap();
+  } catch {}
+}
+
+// =====================================================================
+// WebSocket
+// =====================================================================
+function connectWebSocket() {
+  if (ws && ws.readyState === WebSocket.OPEN) return;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+  ws.onopen = () => console.log('[WS] Connected');
+  ws.onclose = () => { ws = null; setTimeout(connectWebSocket, 3000); };
+  ws.onerror = () => {};
+
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    handleWsMessage(msg);
+  };
+}
+
+function handleWsMessage(msg) {
+  switch (msg.type) {
+    case 'memory_data':
+      renderHexView(msg.lines, msg.address);
+      break;
+    case 'watch_update':
+      updateWatchEntry(msg.id, msg.lines, msg.changed, msg.address);
+      break;
+    case 'watch_added':
+      toast(`Watch ${msg.id} added`, 'success');
+      break;
+    case 'watch_removed':
+      removeWatchElement(msg.id);
+      break;
+    case 'address_table_update':
+      renderAddressTableRows(msg.entries);
+      break;
+  }
+}
+
+function wsSend(msg) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg));
+  }
+}
+
+// =====================================================================
+// Tab Switching
+// =====================================================================
+const tabNames = ['memmap', 'hexview', 'processes', 'search', 'monitor'];
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', tabNames[i] === name);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+
+  if (name === 'memmap' && connected) loadMemoryMap();
+  if (name === 'processes' && connected && allProcesses.length === 0) loadProcesses();
+  if (name === 'search' && connected && allProcesses.length === 0) {
+    loadProcesses();
+  }
+  debouncedSave();
+}
+
+// =====================================================================
+// Memory Map
+// =====================================================================
+const regionColors = [
+  '#00d4ff', '#22c55e', '#eab308', '#f97316', '#a855f7',
+  '#ec4899', '#14b8a6', '#8b5cf6', '#06b6d4', '#84cc16'
+];
+
+async function loadMemoryMap() {
+  if (!connected) return;
+  try {
+    const data = await api('/api/memmap');
+    renderMemoryMap(data);
+  } catch {}
+}
+
+function renderMemoryMap(data) {
+  // Stats
+  const stats = document.getElementById('memmapStats');
+  stats.innerHTML = `
+    <div class="stat-item"><span class="stat-label">Total Memory</span><span class="stat-value">${data.total_mb} MB</span></div>
+    <div class="stat-item"><span class="stat-label">Regions</span><span class="stat-value">${data.regions.length}</span></div>
+    <div class="stat-item"><span class="stat-label">Max Address</span><span class="stat-value">${data.max_address}</span></div>
+    <div class="stat-item"><span class="stat-label">Total Bytes</span><span class="stat-value">${formatSize(data.total_bytes)}</span></div>
+  `;
+
+  // Bar
+  const bar = document.getElementById('memmapBar');
+  bar.innerHTML = '';
+  const maxAddr = parseInt(data.max_address, 16) || 1;
+  data.regions.forEach((r, i) => {
+    const pct = (r.size / data.total_bytes) * 100;
+    const seg = document.createElement('div');
+    seg.className = 'memmap-bar-segment';
+    seg.style.width = Math.max(pct, 0.5) + '%';
+    seg.style.background = regionColors[i % regionColors.length];
+    seg.title = `${r.base} - ${r.end}\nSize: ${formatSize(r.size)}`;
+    seg.onclick = () => jumpToHexView(r.base);
+    bar.appendChild(seg);
+  });
+
+  // Region list
+  const container = document.getElementById('memmapRegions');
+  let html = `<div class="memmap-region" style="font-weight:bold;color:var(--text-dim)">
+    <span>Base Address</span><span>End Address</span><span>Size</span><span>Color</span></div>`;
+  data.regions.forEach((r, i) => {
+    const color = regionColors[i % regionColors.length];
+    html += `<div class="memmap-region" onclick="jumpToHexView('${r.base}')">
+      <span class="base">${r.base}</span>
+      <span class="end">${r.end}</span>
+      <span class="size">${formatSize(r.size)}</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:${color};border-radius:2px;vertical-align:middle;margin-right:6px"></span>Region ${i}</span>
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+
+function jumpToHexView(address) {
+  document.getElementById('hexAddr').value = address;
+  switchTab('hexview');
+  readMemory();
+}
+
+// =====================================================================
+// Hex Viewer
+// =====================================================================
+document.getElementById('hexMode').addEventListener('change', function() {
+  const isVirtual = this.value === 'virtual';
+  document.getElementById('hexPid').style.display = isVirtual ? '' : 'none';
+  document.getElementById('hexPidLabel').style.display = isVirtual ? '' : 'none';
+});
+
+async function readMemory() {
+  const addr = document.getElementById('hexAddr').value.trim();
+  const size = parseInt(document.getElementById('hexSize').value);
+  const mode = document.getElementById('hexMode').value;
+  const pid = parseInt(document.getElementById('hexPid').value) || 4;
+
+  if (!addr) return;
+
+  try {
+    let url;
+    if (mode === 'physical') {
+      url = `/api/read/${encodeURIComponent(addr)}/${size}`;
+    } else {
+      url = `/api/process/${pid}/memory/${encodeURIComponent(addr)}/${size}`;
+    }
+    const data = await api(url);
+    currentHexData = data;
+    renderHexView(data.lines, data.address);
+    document.getElementById('hexElapsed').textContent = `${data.elapsed_ms} ms`;
+  } catch {}
+}
+
+function renderHexView(lines, address) {
+  const container = document.getElementById('hexContent');
+  if (!lines || lines.length === 0) {
+    container.innerHTML = '<div class="empty-state">No data</div>';
+    return;
+  }
+
+  let html = '';
+  for (const line of lines) {
+    // Color individual hex bytes
+    const hexBytes = line.hex.split(' ');
+    let coloredHex = '';
+    for (const hb of hexBytes) {
+      if (hb === '  ' || hb === '') {
+        coloredHex += '   ';
+        continue;
+      }
+      const val = parseInt(hb, 16);
+      let cls = 'hex-byte-ascii';
+      if (val === 0) cls = 'hex-byte-00';
+      else if (val > 0x7e) cls = 'hex-byte-high';
+      coloredHex += `<span class="${cls}">${hb}</span> `;
+    }
+
+    html += `<div class="hex-line">
+      <span class="addr">${line.address}</span>
+      <span class="hex">${coloredHex}</span>
+      <span class="ascii">${escapeHtml(line.ascii)}</span>
+    </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function hexNavigate(direction) {
+  const addrInput = document.getElementById('hexAddr');
+  const size = parseInt(document.getElementById('hexSize').value);
+  let addr = parseInt(addrInput.value, 16) || 0;
+  addr += direction * size;
+  if (addr < 0) addr = 0;
+  addrInput.value = '0x' + addr.toString(16).toUpperCase();
+  readMemory();
+}
+
+function copyHex() {
+  if (!currentHexData) return;
+  navigator.clipboard.writeText(currentHexData.raw_hex).then(() => toast('Hex copied!', 'success'));
+}
+
+function copyAscii() {
+  if (!currentHexData) return;
+  const ascii = currentHexData.lines.map(l => l.ascii).join('\n');
+  navigator.clipboard.writeText(ascii).then(() => toast('ASCII copied!', 'success'));
+}
+
+function toggleAutoRefresh() {
+  const checked = document.getElementById('hexAutoRefresh').checked;
+  if (checked) {
+    autoRefreshInterval = setInterval(readMemory, 500);
+  } else {
+    clearInterval(autoRefreshInterval);
+    autoRefreshInterval = null;
+  }
+}
+
+// Handle Enter key on address input
+document.getElementById('hexAddr').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') readMemory();
+});
+
+// Write panel PID toggle
+function toggleWritePid() {
+  const isVirtual = document.getElementById('writeMode').value === 'virtual';
+  document.getElementById('writePidField').style.display = isVirtual ? '' : 'none';
+}
+
+// Write memory
+async function writeMemory() {
+  const addr = document.getElementById('writeAddr').value.trim();
+  const hex = document.getElementById('writeHex').value.trim();
+  const mode = document.getElementById('writeMode').value;
+  const pid = parseInt(document.getElementById('writePid').value) || 4;
+
+  if (!addr || !hex) {
+    toast('Enter address and hex data', 'error');
+    return;
+  }
+
+  try {
+    let url;
+    if (mode === 'physical') {
+      url = `/api/write/${encodeURIComponent(addr)}`;
+    } else {
+      url = `/api/process/${pid}/write/${encodeURIComponent(addr)}`;
+    }
+    const data = await api(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hex }),
+    });
+
+    if (data.verified) {
+      toast(`Written ${data.size} bytes at ${data.address} - verified OK`, 'success');
+    } else {
+      toast(`Write sent but verify mismatch! Written: ${data.written_hex}, Read: ${data.readback_hex}`, 'error');
+    }
+
+    // Auto-refresh hex viewer if same address
+    document.getElementById('hexAddr').value = addr;
+    document.getElementById('hexMode').value = mode;
+    document.getElementById('hexMode').dispatchEvent(new Event('change'));
+    if (mode === 'virtual') document.getElementById('hexPid').value = pid;
+    readMemory();
+  } catch {}
+}
+
+// =====================================================================
+// Processes
+// =====================================================================
+async function loadProcesses() {
+  if (!connected) return;
+  try {
+    const data = await api('/api/processes');
+    allProcesses = data.processes || [];
+    document.getElementById('procCount').textContent = `${allProcesses.length} processes`;
+    renderProcesses(allProcesses);
+    // Update dropdowns
+    updateWatchProcessDropdown();
+    updateScanProcessDropdown();
+    // Restore saved scanner process selection
+    const saved = loadState();
+    if (saved && saved.scanProcess) {
+      const sel = document.getElementById('scanProcess');
+      // Check if the saved PID still exists in the dropdown
+      if ([...sel.options].some(o => o.value === saved.scanProcess)) {
+        sel.value = saved.scanProcess;
+      }
+    }
+  } catch {}
+}
+
+function renderProcesses(procs) {
+  const body = document.getElementById('procBody');
+  if (procs.length === 0) {
+    body.innerHTML = '<tr><td colspan="7" class="empty-state">No processes found</td></tr>';
+    return;
+  }
+
+  let html = '';
+  for (const p of procs) {
+    const stateText = p.state === 0 ? 'Active' : 'Inactive';
+    const stateColor = p.state === 0 ? 'var(--green)' : 'var(--text-dim)';
+    html += `<tr onclick="selectProcess(${p.pid})" class="${selectedPid === p.pid ? 'selected' : ''}">
+      <td class="pid">${p.pid}</td>
+      <td class="name">${escapeHtml(p.name)}</td>
+      <td>${p.ppid}</td>
+      <td style="color:${stateColor}">${stateText}</td>
+      <td class="dtb">${p.dtb}</td>
+      <td>${p.wow64 ? 'Yes' : ''}</td>
+      <td>${p.session_id}</td>
+    </tr>`;
+  }
+  body.innerHTML = html;
+}
+
+function selectProcess(pid) {
+  selectedPid = pid;
+  renderProcesses(getFilteredProcesses());
+}
+
+function getFilteredProcesses() {
+  const filter = document.getElementById('procFilter').value.toLowerCase();
+  if (!filter) return allProcesses;
+  return allProcesses.filter(p =>
+    p.name.toLowerCase().includes(filter) ||
+    p.pid.toString().includes(filter)
+  );
+}
+
+function filterProcesses() {
+  renderProcesses(getFilteredProcesses());
+}
+
+function readProcessMemory() {
+  if (!selectedPid) {
+    toast('Select a process first', 'error');
+    return;
+  }
+  document.getElementById('hexMode').value = 'virtual';
+  document.getElementById('hexMode').dispatchEvent(new Event('change'));
+  document.getElementById('hexPid').value = selectedPid;
+  document.getElementById('hexAddr').value = '0x0';
+  switchTab('hexview');
+}
+
+function updateWatchProcessDropdown() {
+  const sel = document.getElementById('watchMode');
+  sel.innerHTML = '<option value="-1">Physical</option>';
+  for (const p of allProcesses) {
+    if (p.state === 0) {
+      sel.innerHTML += `<option value="${p.pid}">${p.pid} - ${escapeHtml(p.name)}</option>`;
+    }
+  }
+}
+
+// =====================================================================
+// CE-style Memory Scanner
+// =====================================================================
+const scanState = {
+  scanNumber: 0,
+  totalResults: 0,
+  currentPage: 0,
+  pageSize: 100,
+  isScanning: false,
+  progressInterval: null,
+  addrTableWatchActive: false,
+};
+
+function updateScanConditionUI() {
+  const cond = document.getElementById('scanCondition').value;
+  const hideValue = ['unknown', 'changed', 'unchanged', 'increased', 'decreased'].includes(cond);
+  document.getElementById('scanValueField').style.display = hideValue ? 'none' : '';
+  document.getElementById('scanValue2Field').style.display = cond === 'between' ? '' : 'none';
+}
+
+function enableNextScanConditions(enable) {
+  document.querySelectorAll('#scanCondition option.next-only').forEach(opt => {
+    opt.disabled = !enable;
+  });
+}
+
+function updateScanProcessDropdown() {
+  const sel = document.getElementById('scanProcess');
+  sel.innerHTML = '<option value="0">-- Physical --</option>';
+  for (const p of allProcesses) {
+    if (p.state === 0) {
+      sel.innerHTML += `<option value="${p.pid}">${p.pid} - ${escapeHtml(p.name)}</option>`;
+    }
+  }
+}
+
+// When process changes, update range info
+document.getElementById('scanProcess').addEventListener('change', async function() {
+  const pid = parseInt(this.value);
+  if (pid > 0) {
+    // Virtual mode: get VAD info
+    try {
+      const data = await api(`/api/process/${pid}/vadmap`);
+      document.getElementById('scanStatus').textContent =
+        `Process has ${data.count} memory regions (${data.total_mb} MB mapped)`;
+      // Set range to cover all VAD regions (scanner will use VAD map internally)
+      if (data.regions.length > 0) {
+        document.getElementById('scanStart').value = data.regions[0].start;
+        document.getElementById('scanEnd').value = data.regions[data.regions.length - 1].end;
+      }
+    } catch {}
+  } else {
+    document.getElementById('scanStatus').textContent = 'Ready (Physical mode)';
+    document.getElementById('scanStart').value = '0x10000';
+    document.getElementById('scanEnd').value = '0x100000000';
+  }
+});
+
+function startProgressPoll() {
+  const bar = document.getElementById('scanProgressBar');
+  const fill = document.getElementById('scanProgressFill');
+  const status = document.getElementById('scanStatus');
+  bar.style.display = '';
+  scanState.progressInterval = setInterval(async () => {
+    try {
+      const d = await fetch('/api/scan/progress').then(r => r.json());
+      fill.style.width = (d.progress * 100) + '%';
+      status.textContent = `Scanning... ${(d.progress * 100).toFixed(1)}% (${d.current_count.toLocaleString()} found)`;
+      if (!d.is_scanning) {
+        stopProgressPoll();
+      }
+    } catch {}
+  }, 300);
+}
+
+function stopProgressPoll() {
+  if (scanState.progressInterval) {
+    clearInterval(scanState.progressInterval);
+    scanState.progressInterval = null;
+  }
+  document.getElementById('scanProgressBar').style.display = 'none';
+  document.getElementById('scanProgressFill').style.width = '0%';
+}
+
+async function doFirstScan() {
+  if (scanState.isScanning) return;
+
+  const processVal = document.getElementById('scanProcess').value;
+  const pid = parseInt(processVal);
+  const mode = pid === 0 ? 'physical' : 'virtual';
+  const dataType = document.getElementById('scanDataType').value;
+  const condition = document.getElementById('scanCondition').value;
+  const value = document.getElementById('scanValue').value.trim();
+  const value2 = document.getElementById('scanValue2').value.trim();
+  const start = document.getElementById('scanStart').value.trim();
+  const end = document.getElementById('scanEnd').value.trim();
+
+  if (!['unknown', 'changed', 'unchanged', 'increased', 'decreased'].includes(condition) && !value) {
+    toast('Enter a value to search for', 'error');
+    return;
+  }
+
+  scanState.isScanning = true;
+  document.getElementById('btnFirstScan').disabled = true;
+  document.getElementById('btnNextScan').disabled = true;
+  document.getElementById('scanStatus').textContent = 'Scanning...';
+  document.getElementById('scanResultsBody').innerHTML = '<tr><td colspan="5" class="loading"><div class="spinner"></div>Scanning memory...</td></tr>';
+
+  startProgressPoll();
+
+  try {
+    const data = await api('/api/scan/first', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data_type: dataType, condition, value, value2, mode, pid, start, end }),
+    });
+
+    scanState.scanNumber = data.scan_number;
+    scanState.totalResults = data.count;
+    scanState.currentPage = 0;
+    document.getElementById('scanStatus').textContent =
+      `Scan #${data.scan_number}: ${data.count.toLocaleString()} results (${data.elapsed_ms} ms)`;
+    document.getElementById('btnNextScan').disabled = false;
+    enableNextScanConditions(true);
+    await loadScanResults(0);
+  } catch {
+    document.getElementById('scanStatus').textContent = 'Scan failed';
+  } finally {
+    stopProgressPoll();
+    scanState.isScanning = false;
+    document.getElementById('btnFirstScan').disabled = false;
+    saveState();
+  }
+}
+
+async function doNextScan() {
+  if (scanState.isScanning || scanState.scanNumber < 1) return;
+
+  const condition = document.getElementById('scanCondition').value;
+  const value = document.getElementById('scanValue').value.trim();
+  const value2 = document.getElementById('scanValue2').value.trim();
+
+  if (!['unknown', 'changed', 'unchanged', 'increased', 'decreased'].includes(condition) && !value) {
+    toast('Enter a value', 'error');
+    return;
+  }
+
+  scanState.isScanning = true;
+  document.getElementById('btnNextScan').disabled = true;
+  document.getElementById('scanStatus').textContent = 'Filtering...';
+  startProgressPoll();
+
+  try {
+    const data = await api('/api/scan/next', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ condition, value, value2 }),
+    });
+
+    scanState.scanNumber = data.scan_number;
+    scanState.totalResults = data.count;
+    scanState.currentPage = 0;
+    document.getElementById('scanStatus').textContent =
+      `Scan #${data.scan_number}: ${data.prev_count.toLocaleString()} -> ${data.count.toLocaleString()} results (${data.elapsed_ms} ms)`;
+    await loadScanResults(0);
+  } catch {
+    document.getElementById('scanStatus').textContent = 'Next scan failed';
+  } finally {
+    stopProgressPoll();
+    scanState.isScanning = false;
+    document.getElementById('btnNextScan').disabled = false;
+    saveState();
+  }
+}
+
+async function doResetScan() {
+  await api('/api/scan/reset', { method: 'POST' });
+  scanState.scanNumber = 0;
+  scanState.totalResults = 0;
+  scanState.currentPage = 0;
+  document.getElementById('scanStatus').textContent = 'Ready';
+  document.getElementById('scanResultCount').textContent = 'No scan results';
+  document.getElementById('scanResultPage').textContent = '-';
+  document.getElementById('scanResultsBody').innerHTML =
+    '<tr><td colspan="5" class="empty-state">Perform a scan to see results</td></tr>';
+  document.getElementById('btnNextScan').disabled = true;
+  enableNextScanConditions(false);
+  saveState();
+}
+
+async function loadScanResults(offset) {
+  try {
+    const data = await api(`/api/scan/results?offset=${offset}&limit=${scanState.pageSize}`);
+    scanState.totalResults = data.total;
+    const totalPages = Math.ceil(data.total / scanState.pageSize) || 1;
+    const currentPage = Math.floor(offset / scanState.pageSize) + 1;
+    scanState.currentPage = currentPage - 1;
+
+    document.getElementById('scanResultCount').textContent =
+      `Found: ${data.total.toLocaleString()} addresses`;
+    document.getElementById('scanResultPage').textContent =
+      `Page ${currentPage} / ${totalPages}`;
+
+    const body = document.getElementById('scanResultsBody');
+    if (data.results.length === 0) {
+      body.innerHTML = '<tr><td colspan="5" class="empty-state">No results</td></tr>';
+      return;
+    }
+
+    let html = '';
+    for (const r of data.results) {
+      html += `<tr>
+        <td class="addr" onclick="jumpToHexView('${r.address}')">${r.address}</td>
+        <td class="val">${escapeHtml(r.value)}</td>
+        <td class="prev">${escapeHtml(r.prev_value)}</td>
+        <td style="color:var(--text-dim);font-size:11px">${r.data_type}</td>
+        <td>
+          <button style="font-size:11px;padding:2px 6px" onclick="addToAddrTable('${r.address}','${r.data_type}')">+ Add</button>
+          <button style="font-size:11px;padding:2px 6px" onclick="jumpToHexView('${r.address}')">Hex</button>
+        </td>
+      </tr>`;
+    }
+    body.innerHTML = html;
+  } catch {}
+}
+
+function scanResultsNav(dir) {
+  const newPage = scanState.currentPage + dir;
+  if (newPage < 0) return;
+  const offset = newPage * scanState.pageSize;
+  if (offset >= scanState.totalResults && dir > 0) return;
+  loadScanResults(offset);
+}
+
+// =====================================================================
+// Address Table (CE bottom pane)
+// =====================================================================
+function addToAddrTable(address, dataType) {
+  const processVal = document.getElementById('scanProcess').value;
+  const pid = parseInt(processVal);
+  const mode = pid === 0 ? 'physical' : 'virtual';
+
+  api('/api/scan/address_table/add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address, data_type: dataType, mode, pid, label: '' }),
+  }).then(() => {
+    toast('Added to address table', 'success');
+    refreshAddressTable();
+    startAddrTableWatch();
+  });
+}
+
+async function refreshAddressTable() {
+  try {
+    const data = await api('/api/scan/address_table');
+    const body = document.getElementById('addressTableBody');
+    if (data.entries.length === 0) {
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:12px">Add addresses from scan results above</td></tr>';
+      return;
+    }
+    renderAddressTableRows(data.entries);
+  } catch {}
+}
+
+function renderAddressTableRows(entries) {
+  const body = document.getElementById('addressTableBody');
+  // If user is currently inline-editing, don't replace the table (would destroy the input)
+  if (body.querySelector('.at-inline-edit')) return;
+  let html = '';
+  for (const e of entries) {
+    const lockChecked = e.locked ? 'checked' : '';
+    const lockClass = e.locked ? ' at-locked' : '';
+    html += `<tr>
+      <td class="at-label" ondblclick="editAddrLabel(this, ${e.id})">${escapeHtml(e.label || '(double-click)')}</td>
+      <td class="at-addr" onclick="jumpToHexView('${e.address}')">${e.address}</td>
+      <td style="color:var(--text-dim);font-size:11px">${e.data_type}</td>
+      <td class="at-val${lockClass}" ondblclick="editAddrValue(this, ${e.id}, '${e.data_type}')">${escapeHtml(e.value)}</td>
+      <td><input type="checkbox" ${lockChecked} onchange="toggleAddrLock(${e.id}, this.checked, '${escapeHtml(e.value)}')"></td>
+      <td><button class="danger" style="font-size:11px;padding:2px 6px" onclick="removeAddrEntry(${e.id})">X</button></td>
+    </tr>`;
+  }
+  body.innerHTML = html;
+}
+
+function editAddrLabel(td, id) {
+  const cur = td.textContent === '(double-click)' ? '' : td.textContent;
+  td.innerHTML = `<input class="at-inline-edit" value="${escapeHtml(cur)}" onblur="saveAddrLabel(this, ${id})" onkeydown="if(event.key==='Enter')this.blur()">`;
+  td.querySelector('input').focus();
+}
+
+function saveAddrLabel(input, id) {
+  const label = input.value;
+  api(`/api/scan/address_table/${id}/label`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label }),
+  });
+  input.parentElement.textContent = label || '(double-click)';
+}
+
+function editAddrValue(td, id, dataType) {
+  const cur = td.textContent;
+  td.innerHTML = `<input class="at-inline-edit" value="${escapeHtml(cur)}" onblur="saveAddrValue(this, ${id})" onkeydown="if(event.key==='Enter')this.blur()">`;
+  td.querySelector('input').focus();
+}
+
+async function saveAddrValue(input, id) {
+  const value = input.value;
+  try {
+    await api(`/api/scan/address_table/${id}/write`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    });
+    toast('Value written', 'success');
+  } catch {}
+  input.parentElement.textContent = value;
+}
+
+function toggleAddrLock(id, enabled, currentValue) {
+  api(`/api/scan/address_table/${id}/lock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled, value: currentValue, interval_ms: 100 }),
+  }).then(() => {
+    toast(enabled ? 'Value locked' : 'Value unlocked', 'success');
+  });
+}
+
+function removeAddrEntry(id) {
+  api(`/api/scan/address_table/${id}`, { method: 'DELETE' }).then(() => {
+    refreshAddressTable();
+  });
+}
+
+function clearAddressTable() {
+  api('/api/scan/address_table').then(data => {
+    Promise.all(data.entries.map(e =>
+      api(`/api/scan/address_table/${e.id}`, { method: 'DELETE' })
+    )).then(() => refreshAddressTable());
+  });
+}
+
+function startAddrTableWatch() {
+  if (scanState.addrTableWatchActive) return;
+  scanState.addrTableWatchActive = true;
+  wsSend({ type: 'address_table_watch_start', interval: 500 });
+}
+
+function stopAddrTableWatch() {
+  scanState.addrTableWatchActive = false;
+  wsSend({ type: 'address_table_watch_stop' });
+}
+
+// Enter key triggers scan
+document.getElementById('scanValue').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    if (scanState.scanNumber > 0) doNextScan(); else doFirstScan();
+  }
+});
+
+// =====================================================================
+// Live Monitor
+// =====================================================================
+const activeWatches = {};
+
+function addWatch() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    toast('WebSocket not connected', 'error');
+    return;
+  }
+
+  const address = document.getElementById('watchAddr').value.trim();
+  const size = parseInt(document.getElementById('watchSize').value);
+  const interval = parseInt(document.getElementById('watchInterval').value) || 500;
+  const pid = parseInt(document.getElementById('watchMode').value);
+
+  wsSend({
+    type: 'watch_add',
+    address, size, interval, pid,
+  });
+
+  // Pre-create the watch UI element (will be updated via WS)
+  const watchId = 'watch_' + (Object.keys(activeWatches).length + 1);
+  createWatchElement(watchId, address, size, pid);
+  activeWatches[watchId] = { address, size, pid };
+
+  // Clear empty state
+  const list = document.getElementById('watchList');
+  const empty = list.querySelector('.empty-state');
+  if (empty) empty.remove();
+}
+
+function createWatchElement(id, address, size, pid) {
+  const list = document.getElementById('watchList');
+  const entry = document.createElement('div');
+  entry.className = 'watch-entry';
+  entry.id = `we-${id}`;
+
+  const modeLabel = pid === -1 ? 'Physical' : `PID ${pid}`;
+  entry.innerHTML = `
+    <div class="watch-header">
+      <span class="label">${address} (${size}B) [${modeLabel}]</span>
+      <button class="danger" onclick="removeWatch('${id}')">Remove</button>
+    </div>
+    <div class="watch-body" id="wb-${id}">
+      <div class="loading"><div class="spinner"></div>Waiting for data...</div>
+    </div>
+  `;
+  list.appendChild(entry);
+}
+
+function updateWatchEntry(id, lines, changed, address) {
+  // Find matching watch element - map server IDs to our local elements
+  let bodyEl = document.getElementById(`wb-${id}`);
+  if (!bodyEl) {
+    // Try matching by index
+    const entries = document.querySelectorAll('.watch-entry');
+    const idx = parseInt(id.replace('watch_', '')) - 1;
+    if (entries[idx]) {
+      bodyEl = entries[idx].querySelector('.watch-body');
+    }
+  }
+  if (!bodyEl) return;
+
+  const changedSet = new Set(changed || []);
+  let html = '';
+  let byteIdx = 0;
+
+  for (const line of lines) {
+    const hexBytes = line.hex.split(' ');
+    let coloredHex = '';
+    for (const hb of hexBytes) {
+      if (hb === '  ' || hb === '') {
+        coloredHex += '   ';
+        byteIdx++;
+        continue;
+      }
+      const val = parseInt(hb, 16);
+      let cls = 'hex-byte-ascii';
+      if (changedSet.has(byteIdx)) cls = 'byte-changed';
+      else if (val === 0) cls = 'hex-byte-00';
+      else if (val > 0x7e) cls = 'hex-byte-high';
+      coloredHex += `<span class="${cls}">${hb}</span> `;
+      byteIdx++;
+    }
+
+    html += `<div class="hex-line">
+      <span class="addr">${line.address}</span>
+      <span class="hex">${coloredHex}</span>
+      <span class="ascii">${escapeHtml(line.ascii)}</span>
+    </div>`;
+  }
+  bodyEl.innerHTML = html;
+}
+
+function removeWatch(id) {
+  wsSend({ type: 'watch_remove', id });
+  removeWatchElement(id);
+}
+
+function removeWatchElement(id) {
+  const el = document.getElementById(`we-${id}`);
+  if (el) el.remove();
+  delete activeWatches[id];
+
+  const list = document.getElementById('watchList');
+  if (list.children.length === 0) {
+    list.innerHTML = '<div class="empty-state">Add memory addresses to watch for changes in real-time</div>';
+  }
+}
+
+// =====================================================================
+// Init
+// =====================================================================
+
+// Restore saved state first (before connection)
+const _savedState = restoreState();
+
+// Restore active tab
+if (_savedState && _savedState.activeTab) {
+  const tabLabels = { 'Memory Map': 'memmap', 'Hex Viewer': 'hexview', 'Processes': 'processes', 'Scanner': 'search', 'Live Monitor': 'monitor' };
+  const tabKey = tabLabels[_savedState.activeTab];
+  if (tabKey) {
+    // Apply tab selection without triggering data loads (not connected yet)
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      t.classList.toggle('active', tabNames[i] === tabKey);
+    });
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    const tabEl = document.getElementById('tab-' + tabKey);
+    if (tabEl) tabEl.classList.add('active');
+  }
+}
+
+// Post-connection init: reload scan results, address table, etc.
+async function onConnected() {
+  // Load processes (will also restore scanner process dropdown selection)
+  await loadProcesses();
+
+  // If there was an active scan session, try to restore results
+  if (scanState.scanNumber > 0) {
+    document.getElementById('btnNextScan').disabled = false;
+    enableNextScanConditions(true);
+    document.getElementById('scanStatus').textContent =
+      `Restored scan #${scanState.scanNumber}: ${scanState.totalResults.toLocaleString()} results`;
+    await loadScanResults(scanState.currentPage * scanState.pageSize);
+  }
+
+  // Load address table and start watch
+  try {
+    const atData = await api('/api/scan/address_table');
+    if (atData.entries && atData.entries.length > 0) {
+      renderAddressTableRows(atData.entries);
+      startAddrTableWatch();
+    }
+  } catch {}
+
+  // Load current tab's data
+  const activeTabEl = document.querySelector('.tab-content.active');
+  if (activeTabEl) {
+    if (activeTabEl.id === 'tab-memmap') loadMemoryMap();
+  }
+}
+
+checkStatus();
+setInterval(() => {
+  if (!connected) checkStatus();
+}, 5000);
+</script>
+</body>
+</html>
